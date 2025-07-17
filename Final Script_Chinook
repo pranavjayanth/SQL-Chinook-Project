@@ -1,0 +1,714 @@
+-- Objective_Type
+-- 1
+show tables;
+select * from album;
+select distinct * from album; 
+SELECT * FROM artist;
+SELECT distinct * FROM artist;
+SELECT * from customer;
+SELECT distinct * FROM customer; 
+SELECT COUNT(*) FROM customer;
+SELECT * from employee;
+SELECT distinct * FROM employee; 
+SELECT * FROM invoice;
+SELECT distinct * FROM invoice; 
+SELECT * FROM genre;
+SELECT distinct * FROM genre; 
+SELECT * FROM invoice line;
+SELECT distinct * FROM invoice line; 
+SELECT * FROM media_type;
+SELECT distinct * FROM media_type; 
+SELECT * FROM playlist;
+SELECT distinct * FROM playlist;
+SELECT * FROM playlist track;
+SELECT distinct * FROM playlist track;
+SELECT * FROM track;
+SELECT distinct * FROM track;
+SELECT COUNT(*) FROM track;
+
+SELECT COUNT(*) FROM track
+WHERE composer is NULL;
+
+-- 2
+-- Top_Tracks
+
+SELECT t.name, SUM(il.quantity) AS quantity
+FROM customer c INNER JOIN invoice i ON c.customer_id = i.customer_id INNER JOIN
+invoice_line il ON i.invoice_id = il.invoice_id INNER JOIN track t ON il.track_id = t.track_id
+WHERE c.country = 'USA'
+GROUP BY t.name
+ORDER BY quantity DESC;
+
+-- Top_Genre
+SELECT 
+    	g.genre_id,
+    	g.name AS genre_name,
+   	SUM(il.quantity) AS total_sold
+FROM
+    	invoice_line il
+    	INNER JOIN invoice i ON il.invoice_id = i.invoice_id
+    	INNER JOIN customer c ON i.customer_id = c.customer_id
+    	INNER JOIN track t ON il.track_id = t.track_id
+    	INNER JOIN album al ON t.album_id = al.album_id
+    	INNER JOIN artist a ON al.artist_id = a.artist_id
+    	INNER JOIN genre g ON t.genre_id = g.genre_id
+WHERE
+    	c.country = 'USA' 
+GROUP BY 
+    	g.genre_id, g.name
+ORDER BY 
+    	total_sold DESC;
+        
+-- Top_Artist
+
+SELECT art.name, SUM(il.quantity) AS quantity
+FROM customer c INNER JOIN invoice i ON c.customer_id = i.customer_id INNER JOIN
+invoice_line il ON i.invoice_id = il.invoice_id INNER JOIN track t ON il.track_id = t.track_id
+INNER JOIN album a on t.album_id = a.album_id INNER JOIN artist art ON a.artist_id = art.artist_id
+WHERE c.country = 'USA'
+GROUP BY art.name
+ORDER BY quantity DESC;
+
+-- 3 Demography
+-- By_Country
+
+SELECT country, COUNT(*) AS NumberOfCustomers
+FROM customer
+GROUP BY country
+ORDER BY NumberOfCustomers DESC;
+
+-- By_city
+SELECT city as city, COUNT(customer_id) AS NumberOfCustomers
+FROM customer
+GROUP BY city
+ORDER BY NumberOfCustomers DESC;
+
+-- 4 Revenue
+-- Revenue vs Country
+SELECT c.country,
+    SUM(il.unit_price * il.quantity) AS total_revenue,
+    COUNT(il.invoice_id) AS n_invoices
+FROM invoice I JOIN invoice_line il ON il.invoice_id = i.invoice_id JOIN customer c ON c.customer_id = i.customer_id
+GROUP BY c.country
+ORDER BY total_revenue DESC, n_invoices DESC;
+
+-- Revnue vs City
+SELECT 
+    COALESCE(c.city, 'N/A') AS city,SUM(il.unit_price * il.quantity) AS total_revenue, COUNT(il.invoice_id) AS n_invoices
+FROM  invoice I JOIN  invoice_line il ON il.invoice_id = i.invoice_id  JOIN customer c ON c.customer_id = i.customer_id        
+GROUP BY city
+ORDER BY total_revenue DESC, n_invoices DESC;
+
+-- 5
+
+-- Top 5 customers by total revenue in each country
+
+ WITH CustomerRevenueRank AS (
+    SELECT 
+        c.customer_id,
+        CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+        i.billing_country,
+        SUM(i.total) AS total_revenue,
+        RANK() OVER (PARTITION BY i.billing_country ORDER BY SUM(i.total) DESC) AS `rank`
+    FROM 
+        customer c
+    INNER JOIN 
+        invoice i ON c.customer_id = i.customer_id
+    GROUP BY 
+        c.customer_id, i.billing_country, c.first_name, c.last_name
+)
+SELECT 
+    customer_id,
+    customer_name,
+    billing_country,
+    total_revenue,
+    `rank`
+FROM 
+    CustomerRevenueRank
+WHERE 
+    `rank` <= 5
+ORDER BY 
+    billing_country ASC, `rank` ASC;
+    
+    
+-- 6 Top-selling track for each customer
+WITH ranked_tracks AS (
+    SELECT 
+        c.customer_id,
+        c.first_name,
+        c.last_name,
+        t.track_id,
+        t.name AS track_name,
+        SUM(il.quantity) AS total_sales
+    FROM 
+        customer c
+    JOIN 
+        invoice i ON i.customer_id = c.customer_id
+    JOIN 
+        invoice_line il ON il.invoice_id = i.invoice_id
+    JOIN 
+        track t ON t.track_id = il.track_id
+    GROUP BY 
+        c.customer_id,
+        c.first_name,
+        c.last_name,
+        t.track_id,
+        t.name
+)
+SELECT 
+    customer_id,
+    first_name,
+    last_name,
+    track_id,
+    track_name,
+    total_sales
+FROM 
+    ranked_tracks
+ORDER BY 
+    total_sales DESC;
+
+
+
+-- 7 Trends in customer purchasing behaviour.
+SELECT
+		c.customer_id,
+		CONCAT(c.first_name, ' ', c.last_name) as customers,
+		YEAR(i.invoice_date) AS year,
+		COUNT(i.invoice_id) AS purchase_count
+FROM
+		customer c
+		INNER JOIN invoice i ON c.customer_id = i.customer_id
+GROUP BY 
+		c.customer_id, customers, YEAR(i.invoice_date)
+ORDER BY 
+		c.customer_id, customers, YEAR(i.invoice_date);
+        
+-- Avg Order Value By Cust_ID
+
+select customer_id, avg(total) as avg_order_value, count(invoice_id)as num_of_orders
+from invoice
+group by customer_id
+order by count(invoice_id),avg(total);
+
+-- Invoice Count Monthly
+select count(invoice_id) as daily_invoice_count, extract(YEAR_MONTH from invoice_date), avg(total) as monthly_avg_total, sum(total) as monthly_sum_total
+from invoice
+group by extract(YEAR_MONTH from invoice_date)
+order by extract(YEAR_MONTH from invoice_date);
+
+-- 8 Churn rate calculation
+
+-- 1. Count customers who churned in 2018 (customers who made purchases in 2018 but not in 2017)
+SELECT 
+    COUNT(DISTINCT customer_id) AS customer_count 
+FROM 
+    invoice 
+WHERE 
+    invoice_date BETWEEN '2018-01-01' AND '2018-12-31' 
+    AND customer_id NOT IN (
+        SELECT DISTINCT customer_id 
+        FROM invoice
+        WHERE invoice_date BETWEEN '2017-01-01' AND '2017-12-31'
+    );
+
+-- 2. Count customers who churned in 2019 (customers who made purchases in 2019 but not in 2018)
+SELECT 
+    COUNT(DISTINCT customer_id) AS customer_count 
+FROM 
+    invoice 
+WHERE 
+    invoice_date BETWEEN '2019-01-01' AND '2019-12-31' 
+    AND customer_id NOT IN (
+        SELECT DISTINCT customer_id 
+        FROM invoice
+        WHERE invoice_date BETWEEN '2018-01-01' AND '2018-12-31'
+    );
+
+-- 3. Count customers who churned in 2020 (customers who made purchases in 2020 but not in 2019)
+SELECT 
+    COUNT(DISTINCT customer_id) AS customer_count 
+FROM 
+    invoice 
+WHERE 
+    invoice_date BETWEEN '2020-01-01' AND '2020-12-31' 
+    AND customer_id NOT IN (
+        SELECT DISTINCT customer_id 
+        FROM invoice
+        WHERE invoice_date BETWEEN '2019-01-01' AND '2019-12-31'
+    );
+
+-- Count total number of customers at the beginning of each year (starting customer base)
+-- Customers at the beginning of 2018 (purchased in 2017)
+SELECT 
+    COUNT(DISTINCT customer_id) 
+FROM 
+    invoice 
+WHERE 
+    invoice_date BETWEEN '2017-01-01' AND '2017-12-31';
+
+-- Customers at the beginning of 2019 (purchased in 2018)
+SELECT 
+    COUNT(DISTINCT customer_id) 
+FROM 
+    invoice 
+WHERE 
+    invoice_date BETWEEN '2018-01-01' AND '2018-12-31';
+
+-- Customers at the beginning of 2020 (purchased in 2019)
+SELECT 
+    COUNT(DISTINCT customer_id) 
+FROM 
+    invoice 
+WHERE 
+    invoice_date BETWEEN '2019-01-01' AND '2019-12-31';
+
+-- Calculate churn rate for the first quarter (Q1) of each year
+-- Comparing customers who were active in the first 3 months but did not purchase in the last quarter of the previous year
+
+WITH Q1_cte1 AS (
+    SELECT COUNT(DISTINCT customer_id) AS churn_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2018-01-01' AND '2018-03-31' 
+    AND customer_id NOT IN (
+        SELECT DISTINCT customer_id 
+        FROM invoice 
+        WHERE invoice_date BETWEEN '2017-10-01' AND '2017-12-31'
+    )
+),
+Q1_cte2 AS (
+    SELECT COUNT(DISTINCT customer_id) AS churn_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2019-01-01' AND '2019-03-31' 
+    AND customer_id NOT IN (
+        SELECT DISTINCT customer_id 
+        FROM invoice 
+        WHERE invoice_date BETWEEN '2018-10-01' AND '2018-12-31'
+    )
+),
+Q1_cte3 AS (
+    SELECT COUNT(DISTINCT customer_id) AS churn_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2020-01-01' AND '2020-03-31' 
+    AND customer_id NOT IN (
+        SELECT DISTINCT customer_id 
+        FROM invoice 
+        WHERE invoice_date BETWEEN '2019-10-01' AND '2019-12-31'
+    )
+),
+Q1_cte4 AS (
+    SELECT COUNT(DISTINCT customer_id) AS customer_count 
+    FROM invoice 
+    WHERE invoice_date BETWEEN '2017-01-01' AND '2017-03-31'
+),
+Q1_cte5 AS (
+    SELECT COUNT(DISTINCT customer_id) AS customer_count 
+    FROM invoice 
+    WHERE invoice_date BETWEEN '2018-01-01' AND '2018-03-31'
+),
+Q1_cte6 AS (
+    SELECT COUNT(DISTINCT customer_id) AS customer_count 
+    FROM invoice 
+    WHERE invoice_date BETWEEN '2019-01-01' AND '2019-03-31'
+),
+Q1_cte7 AS (
+    SELECT COUNT(DISTINCT customer_id) AS customer_count 
+    FROM invoice 
+    WHERE invoice_date BETWEEN '2020-01-01' AND '2020-03-31'
+)
+SELECT 
+    (c1.churn_count + c2.churn_count + c3.churn_count) * 100 / ((c4.customer_count + c5.customer_count + c6.customer_count + c7.customer_count) / 4) AS Q1_Churn
+FROM 
+    Q1_cte1 AS c1, 
+    Q1_cte2 AS c2, 
+    Q1_cte3 AS c3, 
+    Q1_cte4 AS c4, 
+    Q1_cte5 AS c5, 
+    Q1_cte6 AS c6, 
+    Q1_cte7 AS c7;
+
+--  Calculate churn rates based on the first and last three months of each year
+
+-- Churn rate in 2017 (January-March vs October-December)
+WITH first_three_months AS (
+    SELECT COUNT(customer_id) AS customer_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2017-01-01' AND '2017-03-31'
+),
+last_three_months AS (
+    SELECT COUNT(customer_id) AS customer_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2017-10-01' AND '2017-12-31'
+)
+SELECT 
+    ((first3.customer_count - last3.customer_count) / first3.customer_count) * 100 AS churn_rate
+FROM 
+    first_three_months AS first3, 
+    last_three_months AS last3;
+-- Churn rate in 2017: 40.82%
+
+-- Repeat for the other years (2018, 2019, 2020) to calculate churn rates.
+
+-- Churn rate in 2018 (January-March vs October-December)
+WITH first_three_months AS (
+    SELECT COUNT(customer_id) AS customer_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2018-01-01' AND '2018-03-31'
+),
+last_three_months AS (
+    SELECT COUNT(customer_id) AS customer_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2018-10-01' AND '2018-12-31'
+)
+SELECT 
+    ((first3.customer_count - last3.customer_count) / first3.customer_count) * 100 AS churn_rate
+FROM 
+    first_three_months AS first3, 
+    last_three_months AS last3;
+-- Churn rate in 2018: 53.45%
+
+-- Churn rate in 2019 (January-March vs October-December)
+WITH first_three_months_2019 AS (
+    SELECT COUNT(customer_id) AS customer_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2019-01-01' AND '2019-03-31'
+),
+last_three_months_2019 AS (
+    SELECT COUNT(customer_id) AS customer_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2019-10-01' AND '2019-12-31'
+)
+SELECT 
+    ((first3_2019.customer_count - last3_2019.customer_count) / first3_2019.customer_count) * 100 AS churn_rate
+FROM 
+    first_three_months_2019 AS first3_2019, 
+    last_three_months_2019 AS last3_2019;
+-- Churn rate in 2019: Calculate based on customer activity in Q1 and Q4
+
+-- Churn rate in 2020 (January-March vs October-December)
+WITH first_three_months_2020 AS (
+    SELECT COUNT(customer_id) AS customer_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2020-01-01' AND '2020-03-31'
+),
+last_three_months_2020 AS (
+    SELECT COUNT(customer_id) AS customer_count 
+    FROM invoice
+    WHERE invoice_date BETWEEN '2020-10-01' AND '2020-12-31'
+)
+SELECT 
+    ((first3_2020.customer_count - last3_2020.customer_count) / first3_2020.customer_count) * 100 AS churn_rate
+FROM 
+    first_three_months_2020 AS first3_2020, 
+    last_three_months_2020 AS last3_2020;
+-- Churn rate in 2020: Calculate based on customer activity in Q1 and Q4
+
+
+
+
+
+
+
+-
+-- 9	Calculate the percentage of total sales contributed by each genre in the USA and identify the best-selling genres and artists.
+
+WITH genre_counts AS (
+SELECT 
+g.name AS genre_name,
+COUNT(g.genre_id) AS genre_count
+FROM 
+customer c
+INNER JOIN invoice i ON c.customer_id = i.customer_id
+INNER JOIN invoice_line il ON i.invoice_id = il.invoice_id
+INNER JOIN track t ON il.track_id = t.track_id
+INNER JOIN genre g ON t.genre_id = g.genre_id
+WHERE 
+c.country = 'USA'
+GROUP BY 
+g.name
+),
+total_count AS (
+    SELECT 
+        COUNT(g.genre_id) AS total_count
+    FROM 
+        customer c
+        INNER JOIN invoice i ON c.customer_id = i.customer_id
+        INNER JOIN invoice_line il ON i.invoice_id = il.invoice_id
+        INNER JOIN track t ON il.track_id = t.track_id
+        INNER JOIN genre g ON t.genre_id = g.genre_id
+    WHERE 
+        c.country = 'USA'
+)
+
+SELECT 
+    gc.genre_name,
+    gc.genre_count,
+    (gc.genre_count * 100 / tc.total_count) AS percentage
+FROM 
+    genre_counts gc
+    CROSS JOIN total_count tc
+ORDER BY 
+    gc.genre_count DESC;
+    
+-- 10.	Find customers who have purchased tracks from at least 3 different genres
+SELECT 
+        c.first_name, count(distinct g.name) AS genre_count
+        
+    FROM 
+        customer c
+        INNER JOIN invoice i ON c.customer_id = i.customer_id
+        INNER JOIN invoice_line il ON i.invoice_id = il.invoice_id
+        INNER JOIN track t ON il.track_id = t.track_id
+        INNER JOIN genre g ON t.genre_id = g.genre_id
+
+	GROUP BY c.first_name
+    HAVING count(distinct g.name) >=3
+    ORDER BY genre_count DESC;
+-- 11
+ select g.name,sum(i.total) as genre_sum, rank() over(order by sum(i.total) desc) as rankk
+from customer c inner join invoice i on c.customer_id = i.customer_id inner join invoice_line il on i.invoice_id = il.invoice_id inner join track t on il.track_id = t.track_id
+inner join genre g on t.genre_id = g.genre_id
+where c.country = "USA"
+group by g.name;
+
+-- 12
+
+select first_name, last_name from customer c
+left join (
+select * 
+from invoice
+where invoice_date > (select max(invoice_date) from invoice) - interval 3 month) prev_3_months
+on prev_3_months.customer_id = c.customer_id
+where invoice_id is null;
+
+
+
+-- Subjective
+-- 1
+SELECT
+	g.genre_id,
+	g.name AS genre_name,
+	al.album_id,
+	al.title AS new_record_label,
+	SUM(il.unit_price * il.quantity) AS total_genre_sales,
+	DENSE_RANK() OVER (ORDER BY SUM(il.unit_price * il.quantity) DESC) AS Ranking
+FROM 
+	genre g
+	INNER JOIN track t ON g.genre_id = t.genre_id
+	INNER JOIN invoice_line il ON t.track_id = il.track_id 
+	INNER JOIN invoice i ON il.invoice_id = i.invoice_id
+	INNER JOIN customer c ON i.customer_id = c.customer_id
+	INNER JOIN album al on t.album_id = al.album_id
+WHERE
+	c.country = 'USA'
+GROUP BY 
+	g.genre_id, g.name, al.album_id,
+	al.title
+ORDER BY 
+	total_genre_sales DESC;
+
+-- 2
+
+SELECT 
+    g.name,
+    SUM(i.total) AS genre_sum,
+    RANK() OVER (ORDER BY SUM(i.total) DESC) AS rankk
+FROM 
+    customer c 
+INNER JOIN 
+    invoice i ON c.customer_id = i.customer_id 
+INNER JOIN 
+    invoice_line il ON i.invoice_id = il.invoice_id 
+INNER JOIN 
+    track t ON il.track_id = t.track_id
+INNER JOIN 
+    genre g ON t.genre_id = g.genre_id
+WHERE 
+    c.country != 'USA'
+GROUP BY 
+    g.name;
+ 
+ -- 3
+ 
+ -- CTE to calculate customer-related metrics such as last purchase date, first purchase date, total spent, items bought, frequency, and the number of days a customer has been active.
+WITH cte AS (
+    SELECT 
+        i.customer_id, 
+        MAX(invoice_date) AS last_purchase_date, 
+        MIN(invoice_date) AS first_purchase_date,
+        SUM(total) AS total_spent, 
+        SUM(quantity) AS items_bought, 
+        COUNT(i.customer_id) AS frequency,
+        ABS(TIMESTAMPDIFF(DAY, MAX(invoice_date), MIN(invoice_date))) AS customer_since_days
+    FROM invoice i
+    LEFT JOIN invoice_line il ON il.invoice_id = i.invoice_id
+    LEFT JOIN customer c ON c.customer_id = i.customer_id
+    GROUP BY i.customer_id
+),
+-- CTE to classify customers into 'Long Term' or 'Short Term' based on their active days compared to the average customer active days.
+long_short_term AS (
+    SELECT 
+        total_spent, 
+        items_bought, 
+        frequency,
+        CASE
+            WHEN customer_since_days > (SELECT AVG(customer_since_days) AS average_days FROM cte) 
+            THEN 'Long Term' 
+            ELSE 'Short Term' 
+        END AS term
+    FROM cte
+)
+-- Final selection of the sum of total spent, items bought, and the count of customers, grouped by the classification of 'Long Term' or 'Short Term'.
+SELECT 
+    term, 
+    SUM(total_spent) AS total_spent, 
+    SUM(items_bought) AS total_items_bought, 
+    COUNT(frequency) AS number_of_customers 
+FROM long_short_term 
+GROUP BY term;
+
+
+-- 4
+WITH track_combinations AS (
+    SELECT 
+        il1.track_id AS track_id_1,
+        il2.track_id AS track_id_2,
+        COUNT(*) AS times_purchased_together
+    FROM 
+        invoice_line il1
+    JOIN 
+        invoice_line il2 ON il1.invoice_id = il2.invoice_id 
+                          AND il1.track_id < il2.track_id
+    GROUP BY 
+        il1.track_id, il2.track_id
+),
+genre_combinations AS (
+    SELECT 
+        t1.genre_id AS genre_id_1,
+        t2.genre_id AS genre_id_2,
+        COUNT(*) AS times_purchased_together
+    FROM 
+        track_combinations tc
+    JOIN 
+        track t1 ON tc.track_id_1 = t1.track_id
+    JOIN 
+        track t2 ON tc.track_id_2 = t2.track_id
+    WHERE 
+        t1.genre_id <> t2.genre_id
+    GROUP BY 
+        t1.genre_id, t2.genre_id
+)
+SELECT 
+    g1.name AS genre_1,
+    g2.name AS genre_2,
+    gc.times_purchased_together
+FROM 
+    genre_combinations gc
+JOIN 
+    genre g1 ON gc.genre_id_1 = g1.genre_id
+JOIN 
+    genre g2 ON gc.genre_id_2 = g2.genre_id
+ORDER BY 
+    gc.times_purchased_together DESC;
+    
+-- 7
+
+ WITH cte AS (
+    SELECT 
+        inv.customer_id,
+        inv.billing_country,
+        inv.invoice_date,
+        CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+        inv.total AS invoice_total
+    FROM 
+        invoice inv
+    LEFT JOIN 
+        customer c ON c.customer_id = inv.customer_id
+    GROUP BY 
+        inv.customer_id, inv.billing_country, inv.invoice_date, c.first_name, c.last_name, inv.total
+),
+cte2 AS (
+    SELECT 
+        customer_id, 
+        SUM(total) AS total_revenue, 
+        COUNT(invoice_id) AS total_invoices,
+        DATEDIFF(MAX(invoice_date), MIN(invoice_date)) AS customer_tenure_days, -- Customer tenure
+        COUNT(DISTINCT(invoice_date)) AS active_periods
+    FROM 
+        invoice
+    GROUP BY 
+        customer_id
+),
+cte3 AS (
+    SELECT 
+        customer_id, 
+        total_revenue / total_invoices AS average_purchase_value, 
+        total_invoices / active_periods AS purchase_frequency, 
+        customer_tenure_days / 365.0 AS customer_tenure_years  -- convert tenure into years
+    FROM 
+        cte2
+)
+SELECT 
+    cte.customer_id, 
+    cte.billing_country, 
+    cte.invoice_date, 
+    cte.customer_name,
+    cte.invoice_total, 
+    cte3.average_purchase_value, 
+    cte3.purchase_frequency,
+    cte3.customer_tenure_years,
+    cte3.average_purchase_value * cte3.purchase_frequency * cte3.customer_tenure_years AS LTV
+FROM 
+    cte
+LEFT JOIN 
+    cte3 ON cte.customer_id = cte3.customer_id
+ORDER BY 
+    LTV DESC, cte.customer_name, cte.invoice_date;
+    
+    -- 10
+    
+    ALTER TABLE Album
+ADD COLUMN ReleaseYear INTEGER;
+select * from album;
+
+
+-- 11
+
+
+
+WITH customer_tracks AS (
+    SELECT 
+        i.customer_id,
+        SUM(il.quantity) AS total_tracks
+    FROM 
+        invoice i
+    JOIN 
+        invoice_line il ON i.invoice_id = il.invoice_id
+    GROUP BY 
+        i.customer_id
+),
+total_customer_spending AS (
+    SELECT 
+        c.country,
+        c.customer_id,
+        SUM(i.total) AS total_spent,
+        ct.total_tracks
+    FROM 
+        customer c
+    JOIN 
+        invoice i ON c.customer_id = i.customer_id
+    JOIN 
+        customer_tracks ct ON c.customer_id = ct.customer_id
+    GROUP BY 
+        c.country, c.customer_id, ct.total_tracks
+)
+SELECT 
+    cs.country,
+    COUNT(DISTINCT cs.customer_id) AS number_of_customers,
+    ROUND(AVG(cs.total_spent),2) AS average_amount_spent_per_customer,
+    ROUND(AVG(cs.total_tracks),2) AS average_tracks_purchased_per_customer
+FROM 
+    total_customer_spending cs
+GROUP BY 
+    cs.country
+ORDER BY 
+    average_amount_spent_per_customer DESC;
